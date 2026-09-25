@@ -986,7 +986,7 @@ function vRecords(){
         <td class="mono">${fmtDT(r.dt_porta)||"—"}</td>
         <td>${esc(r.desfecho||"—")}</td>
         <td><span class="status"><span class="dot ${ST_CLS[r.status]||"inc"}" title="${r.status||"Incompleto"}"></span>${esc(r.status||"Incompleto")}${r.locked?`<svg aria-label="Bloqueada" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>`:""}</span></td>
-      </tr>`).join(""):`<tr><td colspan="8" class="empty">Nenhum registro encontrado com esses filtros.</td></tr>`}</tbody>
+      </tr>`).join(""):`<tr><td colspan="8" class="empty">${S.records.length?"Nenhum registro encontrado com esses filtros.":"Nenhum registro cadastrado ainda. Clique em <strong>+ Adicionar novo registro</strong> para cadastrar o primeiro caso."}</td></tr>`}</tbody>
     </table></div>
     <div class="panel-b muted" style="font-size:.85rem">Exibindo ${rows.length} de ${S.records.length} registros.</div>
   </section>`;
@@ -1241,10 +1241,6 @@ function vConfig(){
       <p class="muted">Percentual mínimo para um indicador de processo ser considerado dentro da meta.</p>
       <div class="btn-row"><input type="number" id="meta" min="1" max="100" value="${S.settings.meta}" style="width:7rem"><span>%</span><button class="btn primary" id="save-meta">Salvar meta</button></div>
     </div></section>
-    <section class="panel"><div class="panel-h"><h2>Dados de exemplo</h2></div><div class="panel-b" style="display:flex;flex-direction:column;gap:10px">
-      <p class="muted">Carregue fichas fictícias para treinar a equipe no preenchimento e na leitura dos indicadores. Elas ficam marcadas como exemplo.</p>
-      <div class="btn-row"><button class="btn" id="load-demo">Carregar exemplos</button></div>
-    </div></section>
     <section class="panel"><div class="panel-h"><h2>Apagar todos os dados</h2></div><div class="panel-b" style="display:flex;flex-direction:column;gap:10px">
       <p class="muted">Remove todos os registros deste navegador. Faça um backup antes.</p>
       <div class="btn-row"><button class="btn danger" id="wipe">Apagar todos os registros</button></div>
@@ -1260,7 +1256,6 @@ function bindConfig(){
   $("#add-u").onclick=()=>{ const v=$("#new-u").value.trim(); if(!v) return; if(S.settings.unidades.includes(v)){ toast("Essa unidade já está cadastrada."); return; } S.settings.unidades.push(v); persist(); render(); toast("Unidade adicionada."); };
   $$("[data-rmu]").forEach(b=>b.onclick=async()=>{ const u=S.settings.unidades[+b.dataset.rmu]; if(await confirmBox(`Remover “${u}”?`,"Os registros dessa unidade continuam salvos; apenas a opção deixa de aparecer em novas fichas.","Remover",true)){ S.settings.unidades.splice(+b.dataset.rmu,1); persist(); render(); } });
   $("#save-meta").onclick=()=>{ const v=Math.min(100,Math.max(1,parseInt($("#meta").value,10)||80)); S.settings.meta=v; persist(); toast(`Meta definida em ${v}%.`); render(); };
-  $("#load-demo").onclick=()=>{ seedDemo(); persist(); toast("Registros de exemplo carregados."); go("registros"); render(); };
   $("#wipe").onclick=async()=>{ if(await confirmBox("Apagar todos os registros?","Todos os registros deste navegador serão apagados. Essa ação não pode ser desfeita.","Apagar tudo",true)){ S.records=[]; S.nextId=1; S.demoDismissed=true; persist(); render(); toast("Todos os registros foram apagados."); } };
 }
 
@@ -1349,60 +1344,10 @@ async function recordPDF(r){
   }catch(e){ console.error(e); toast("Não foi possível gerar o PDF."); }
 }
 
-/* =========================================================
-   DADOS DE EXEMPLO
-   ========================================================= */
-function seedDemo(){
-  let s=20260925; const rnd=()=>{ s=(s*1664525+1013904223)%4294967296; return s/4294967296; };
-  const pick=a=>a[Math.floor(rnd()*a.length)]; const chance=p=>rnd()<p;
-  const add=(base,m)=>toDT(new Date(pd(base).getTime()+m*60000));
-  const letters="ABCDEFGHIJLMNOPRSTV";
-  const now=new Date();
-  for(let i=0;i<36;i++){
-    const linha=pick(["SCA","SCA","AVC","AVC","SEPSE","SEPSE","SEPSE"]);
-    const d=new Date(now); d.setDate(d.getDate()-Math.floor(rnd()*150)); d.setHours(Math.floor(rnd()*24),Math.floor(rnd()*60),0,0);
-    const porta=toDT(d); const nasc=new Date(d); nasc.setFullYear(d.getFullYear()-(38+Math.floor(rnd()*48))); nasc.setDate(nasc.getDate()-Math.floor(rnd()*300));
-    const r={demo:true, unidade:pick(S.settings.unidades.length?S.settings.unidades:["Unidade"]), linha, maior18:"Sim", iniciais:`${pick(letters)}.${pick(letters)}.${pick(letters)}.`, data_nasc:toD(nasc), etnia:pick(["Parda","Parda","Parda","Branca","Preta","Não declarada"]), genero:pick(["Feminino","Masculino"]), origem:pick(["Demanda espontânea","Demanda espontânea","SAMU / atendimento pré-hospitalar","Transferência de outro serviço"]), dt_porta:porta};
-    const death=chance(linha==="SEPSE"?0.28:0.1);
-    r.desfecho = death?"Óbito":pick(["Alta","Alta","Alta","Transferência"]);
-    if(d>new Date(now.getTime()-3*864e5)&&!death) r.desfecho="Em internação";
-    if(r.desfecho!=="Em internação") r.dt_desfecho=add(porta,60*24*(1+Math.floor(rnd()*9)));
-    if(linha==="SCA"){
-      r.sca_tipo=pick(["Angina instável","IAMSSST","IAMCSST","IAMCSST"]); r.sca_inicio=add(porta,-(30+Math.floor(rnd()*300))); r.sca_ecg=add(porta,3+Math.floor(rnd()*16)); r.sca_aas=chance(.9)?"Sim":"Não"; r.sca_fe=pick(["Sim","Não","Não","Não avaliada"]);
-      if(r.sca_tipo==="IAMCSST"){ r.sca_reperf=pick(["Trombólise","Trombólise","Transferido para ICP","ICP primária","Não realizada"]);
-        if(r.sca_reperf==="Trombólise") r.sca_trombo_dt=add(porta,18+Math.floor(rnd()*30));
-        if(r.sca_reperf==="ICP primária") r.sca_icp_dt=add(porta,60+Math.floor(rnd()*60));
-        if(r.sca_reperf==="Transferido para ICP") r.sca_saida_dt=add(porta,20+Math.floor(rnd()*60)); }
-      if(r.desfecho==="Alta"){ r.sca_alta_aas=chance(.95)?"Sim":"Não"; r.sca_alta_bb=chance(.8)?"Sim":pick(["Não","Contraindicado"]); r.sca_alta_est=chance(.85)?"Sim":"Não"; if(r.sca_fe==="Sim") r.sca_alta_ieca=chance(.7)?"Sim":"Não"; r.sca_tabag=pick(["Sim","Não","Não tabagista","Não tabagista"]); }
-    }
-    if(linha==="AVC"){
-      r.avc_tipo=pick(["Isquêmico","Isquêmico","Isquêmico","Hemorrágico","AIT"]); r.avc_ictus=add(porta,-(40+Math.floor(rnd()*400))); r.avc_nihss=String(Math.floor(rnd()*22)); r.avc_tc=add(porta,8+Math.floor(rnd()*35));
-      if(r.avc_tipo==="Isquêmico"){ r.avc_trombo=mins(r.avc_ictus,porta)<200&&chance(.6)?"Sim":pick(["Não","Contraindicado"]); if(r.avc_trombo==="Sim") r.avc_trombo_dt=add(porta,35+Math.floor(rnd()*45)); }
-      r.avc_disfagia=chance(.75)?"Sim":"Não"; if(["Isquêmico","AIT"].includes(r.avc_tipo)) r.avc_antit48=chance(.85)?"Sim":"Não"; r.avc_tev=chance(.7)?"Sim":pick(["Não","Contraindicado"]); r.avc_fa=chance(.2)?"Sim":"Não";
-      if(r.desfecho==="Alta"){ if(["Isquêmico","AIT"].includes(r.avc_tipo)){ r.avc_alta_antit=chance(.9)?"Sim":"Não"; r.avc_alta_est=chance(.8)?"Sim":"Não"; } if(r.avc_fa==="Sim") r.avc_alta_acg=chance(.7)?"Sim":"Não"; r.avc_mrs=String(Math.floor(rnd()*5)); }
-    }
-    if(linha==="SEPSE"){
-      r.sep_classif=chance(.35)?"Choque séptico":"Sepse"; r.sep_foco=pick(["Pulmonar","Pulmonar","Urinário","Abdominal","Pele e partes moles","Indeterminado"]); r.sep_aquis=chance(.75)?"Comunitária":"Relacionada à assistência (IRAS)";
-      r.sep_t0=add(porta,10+Math.floor(rnd()*90));
-      if(chance(.9)) r.sep_lact_dt=add(r.sep_t0,10+Math.floor(rnd()*70));
-      r.sep_lact_val=(r.sep_classif==="Choque séptico"?2.5+rnd()*5:0.9+rnd()*3.5).toFixed(1);
-      if(chance(.85)) r.sep_hemo_dt=add(r.sep_t0,15+Math.floor(rnd()*50));
-      r.sep_atb_dt=add(r.sep_t0,25+Math.floor(rnd()*80));
-      r.sep_hipop=(r.sep_classif==="Choque séptico"||parseFloat(r.sep_lact_val)>=4)?"Sim":"Não";
-      if(r.sep_hipop==="Sim") r.sep_vol=chance(.75)?"Sim":"Não";
-      if(r.sep_classif==="Choque séptico") r.sep_vaso=chance(.9)?"Sim":"Não";
-      if(parseFloat(r.sep_lact_val)>2) r.sep_relact=chance(.6)?"Sim":"Não";
-    }
-    r.status=chance(.8)?"Completo":pick(["Incompleto","Não verificado"]); r.locked=r.status==="Completo"&&chance(.3);
-    r.created=r.updated=new Date(d.getTime()+3600e3).toISOString();
-    r.record_id=S.nextId++;
-    S.records.push(r);
-  }
-}
-
 /* ---------- boot ---------- */
 $("#nav-ficha").addEventListener("click",()=>{ newDraft(); if(location.hash==="#ficha") render(); });
-if(!S.records.length && !S.demoDismissed){ seedDemo(); persist(); }
+// limpa registros de exemplo criados por versões anteriores
+if(S.records.some(r=>r.demo)){ S.records=S.records.filter(r=>!r.demo); if(!S.records.length) S.nextId=1; persist(); }
 route=(location.hash.slice(1))||"inicio"; if(route==="ficha") newDraft();
 render();
 })();
